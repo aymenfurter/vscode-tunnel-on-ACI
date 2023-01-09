@@ -1,0 +1,31 @@
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+- group: vscodeado
+
+# The following variables need to present in the variable group `vscodeado`: 
+# VSCODEADO_ACR_NAME, VSCODEADO_CI_PREFIX, VSCODEADO_RESOURCE_GROUP, VSCODEADO_SERVICE_CONNECTION
+
+steps:
+- task: AzureCLI@2
+  displayName: '🪣 Create the ACR if it does not exist.'
+  inputs:
+    azureSubscription: $(VSCODEADO_SERVICE_CONNECTION)
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript:  |
+      NAME_AVAILABLE=$(az acr check-name -n $VSCODEADO_ACR_NAME --query nameAvailable)      
+      if [ "$NAME_AVAILABLE" == "true" ]; then
+        az acr create --name $VSCODEADO_ACR_NAME --resource-group $VSCODEADO_RESOURCE_GROUP --sku Basic --admin-enabled
+      fi
+- task: Docker@2
+  displayName: '📦 Building VSCode Server Container Image'
+  inputs:
+    repository: 'vscodeado'
+    containerRegistry: $(VSCODEADO_DOCKER_SERVICE_CONNECTION)
+    command: 'buildAndPush'
+    tags: |
+      $(Build.BuildId)
+      latest
+    Dockerfile: '**/Dockerfile'
