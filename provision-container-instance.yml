@@ -1,0 +1,54 @@
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+- group: vscodeado
+
+parameters:
+- name: instanceName
+  displayName: Specify an identifier for the VSCodeADO instance (e.g. the user this instance is dedicated for)
+  type: string
+  default: alice
+
+# The following variables need to present in the variable group `vscodeado`: 
+# VSCODEADO_ACR_NAME, VSCODEADO_ACR_PASS, VSCODEADO_CI_PREFIX, VSCODEADO_RESOURCE_GROUP, VSCODEADO_SERVICE_CONNECTION
+
+steps:
+- task: AzureCLI@2
+  displayName: '🔨 Create VSCodeADO Instance'
+  env:
+    VSCODEADO_ACR_PASS: $(VSCODEADO_ACR_PASS)
+  inputs:
+    azureSubscription: $(VSCODEADO_SERVICE_CONNECTION)
+    scriptType: 'bash'   
+    scriptLocation: 'inlineScript'
+    inlineScript:  |
+      ACI_NAME=${VSCODEADO_CI_PREFIX}${{ parameters.instanceName }}
+      CHECK_INSTANCE=$(az container list -g $VSCODEADO_RESOURCE_GROUP --query "[?containers[0].name=='$CONTAINER_NAME']" | jq length)
+      
+      if [ "$CHECK_INSTANCE" == "0" ]; then
+        az container create \
+          --name $ACI_NAME \
+          --resource-group $VSCODEADO_RESOURCE_GROUP \
+          --image "$VSCODEADO_ACR_NAME.azurecr.io/vscodeado:latest" \
+          --cpu 1 \
+          --memory 1 \
+          --registry-login-server "$VSCODEADO_ACR_NAME.azurecr.io" \
+          --registry-username $VSCODEADO_ACR_NAME \
+          --registry-password "$VSCODEADO_ACR_PASS" \
+          --ip-address Public \
+          --restart-policy "Always" \
+          --dns-name-label $ACI_NAME
+        
+        az container logs --resource-group $VSCODEADO_RESOURCE_GROUP --name $ACI_NAME
+
+        OUTPUT=""; 
+        while [ `echo $OUTPUT | grep -c browser` = 0 ]; do 
+          OUTPUT=$(az container logs --resource-group $VSCODEADO_RESOURCE_GROUP --name $ACI_NAME); 
+          sleep 10
+        done
+
+        echo "${OUTPUT##*$'\n'}"        
+        
+      fi
